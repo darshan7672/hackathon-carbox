@@ -22,6 +22,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "../supabaseClient";
 
 // Fix for Leaflet default icon
 const DefaultIcon = L.icon({
@@ -194,11 +195,36 @@ export default function FarmerDashboard() {
     }
   };
 
-  const handleGenerate = () => {
-    setIsGenerating(true);
-    setTimeout(() => {
+  const handleGenerate = async () => {
+    try {
+      setIsGenerating(true);
+
+      const { data, error } = await supabase
+        .from("farms")
+        .insert([
+          {
+            area: Number(area),
+            trees: Number(trees),
+            carbon: sequestration,
+            practice: farmingPractice,
+            species: species,
+            latitude: location?.[0],
+            longitude: location?.[1],
+            status: "pending"
+          }
+        ]);
+
+      if (error) {
+        console.error("Supabase error:", error);
+        alert(error.message);
+        setIsGenerating(false);
+        return;
+      }
+
+      // SUCCESS UI
       setIsGenerating(false);
       setShowGenerateSuccess(true);
+
       setTimeout(() => {
         setShowGenerateSuccess(false);
         setStep(1);
@@ -209,7 +235,12 @@ export default function FarmerDashboard() {
         setLocation(null);
         setUploadSuccess(false);
       }, 3000);
-    }, 2000);
+
+    } catch (err: any) {
+      console.error("ERROR:", err);
+      alert(err?.message || "Something went wrong");
+      setIsGenerating(false);
+    }
   };
 
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
