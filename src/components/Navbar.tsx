@@ -1,14 +1,44 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Leaf } from "lucide-react";
+import { useEffect, useState } from "react";
+import { supabase } from "../supabaseClient";
 
 export default function Navbar() {
   const navigate = useNavigate();
-  const userRole = localStorage.getItem("userRole");
+  const [userRole, setUserRole] = useState<string | null>(null);
 
-  const handleLogout = () => {
-    localStorage.removeItem("userRole");
-    navigate("/");
-  };
+  useEffect(() => {
+    const fetchRole = async (userId: string) => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .single();
+      if (profile) {
+        setUserRole(profile.role);
+      } else {
+        setUserRole(null);
+      }
+    };
+
+    // Initial check
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) fetchRole(data.user.id);
+    });
+
+    // Listen for auth changes (like login/logout)
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        fetchRole(session.user.id);
+      } else {
+        setUserRole(null);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   return (
     <nav className="glass-nav sticky top-0 z-50">
@@ -55,12 +85,12 @@ export default function Navbar() {
                     Marketplace
                   </Link>
                 )}
-                <button
-                  onClick={handleLogout}
+                <Link
+                  to="/logout"
                   className="text-slate-500 hover:text-red-500 font-bold text-xs uppercase tracking-widest transition-colors cursor-pointer"
                 >
                   Logout
-                </button>
+                </Link>
               </>
             ) : (
               <Link

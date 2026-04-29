@@ -1,33 +1,39 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Leaf, 
-  Factory, 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  Github, 
-  Chrome, 
-  ShieldCheck, 
-  Verified, 
+import {
+  Leaf,
+  Factory,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Github,
+  Chrome,
+  ShieldCheck,
+  Verified,
   Trees,
   User
 } from "lucide-react";
 
+import { supabase } from "../supabaseClient";
+
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  
+
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<"farmer" | "industry">("industry");
   const [mode, setMode] = useState<"login" | "register">("login");
 
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+
   useEffect(() => {
     const roleParam = searchParams.get("role");
     const modeParam = searchParams.get("mode");
-    
+
     if (roleParam === "farmer" || roleParam === "industry") {
       setRole(roleParam);
     }
@@ -36,10 +42,81 @@ export default function Login() {
     }
   }, [searchParams]);
 
-  const handleAuth = (e: React.FormEvent) => {
+
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem("userRole", role);
-    navigate(role === "farmer" ? "/farmer" : "/industry");
+
+    if (mode === "login") {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        alert("Invalid email or password");
+        return;
+      }
+
+      // ✅ get user id
+      if (!data.user) return;
+      const userId = data.user.id;
+
+      // ✅ fetch role from DB
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .single();
+
+      if (profileError || !profile) {
+        alert("Error fetching user role");
+        return;
+      }
+
+      // ✅ redirect based on role
+      if (profile.role === "farmer") {
+        navigate("/farmer");
+      } else {
+        navigate("/industry");
+      }
+
+    } else {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      // ⚠️ IMPORTANT: user may be null if email confirmation is required
+      const user = data.user;
+
+      if (!user) {
+        alert("Check your email to confirm account first!");
+        return;
+      }
+
+      // 👉 INSERT INTO profiles
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .insert([
+          {
+            id: user.id,
+            role: role,
+          },
+        ]);
+
+      if (profileError) {
+        console.error(profileError);
+        alert("Error saving role");
+        return;
+      }
+
+      alert("Signup successful!");
+    }
   };
 
   return (
@@ -66,23 +143,23 @@ export default function Login() {
           {/* Role Toggle */}
           <div className="flex p-1.5 bg-slate-100/80 rounded-2xl mb-10 border border-slate-200/50">
             <button
+              type="button"
               onClick={() => setRole("industry")}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                role === "industry" 
-                  ? "bg-white text-emerald-600 shadow-md shadow-emerald-900/5" 
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${role === "industry"
+                  ? "bg-white text-emerald-600 shadow-md shadow-emerald-900/5"
                   : "text-slate-500 hover:text-slate-700"
-              }`}
+                }`}
             >
               <Factory className="size-4" />
               Industry
             </button>
             <button
+              type="button"
               onClick={() => setRole("farmer")}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                role === "farmer" 
-                  ? "bg-white text-emerald-600 shadow-md shadow-emerald-900/5" 
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${role === "farmer"
+                  ? "bg-white text-emerald-600 shadow-md shadow-emerald-900/5"
                   : "text-slate-500 hover:text-slate-700"
-              }`}
+                }`}
             >
               <Leaf className="size-4" />
               Farmer
@@ -90,32 +167,39 @@ export default function Login() {
           </div>
 
           <form onSubmit={handleAuth} className="space-y-6">
-            {mode === "register" && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                className="space-y-6"
-              >
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2.5 ml-1">Full Name</label>
-                  <div className="relative group">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
-                    <input 
-                      type="text" 
-                      required
-                      className="w-full pl-12 pr-4 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all outline-none font-medium placeholder:text-slate-300"
-                      placeholder="John Doe"
-                    />
+            <AnimatePresence>
+              {mode === "register" && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-6 overflow-hidden"
+                >
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2.5 ml-1">Full Name</label>
+                    <div className="relative group">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                        className="w-full pl-12 pr-4 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all outline-none font-medium placeholder:text-slate-300"
+                        placeholder="John Doe"
+                      />
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div>
               <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2.5 ml-1">Email Address</label>
               <div className="relative group">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
-                <input 
-                  type="email" 
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full pl-12 pr-4 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all outline-none font-medium placeholder:text-slate-300"
                   placeholder="name@company.com"
@@ -132,13 +216,15 @@ export default function Login() {
               </div>
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
-                <input 
-                  type={showPassword ? "text" : "password"} 
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                   className="w-full pl-12 pr-12 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all outline-none font-medium placeholder:text-slate-300"
                   placeholder="••••••••"
                 />
-                <button 
+                <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
@@ -155,7 +241,7 @@ export default function Login() {
               </div>
             )}
 
-            <button 
+            <button
               type="submit"
               className="btn-emerald w-full !py-4.5 !rounded-2xl shadow-xl shadow-emerald-900/10"
             >
@@ -172,11 +258,11 @@ export default function Login() {
             </div>
 
             <div className="grid grid-cols-2 gap-5">
-              <button className="flex items-center justify-center gap-3 py-3.5 border border-slate-200 rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all font-bold text-slate-600 text-sm active:scale-95">
+              <button type="button" className="flex items-center justify-center gap-3 py-3.5 border border-slate-200 rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all font-bold text-slate-600 text-sm active:scale-95">
                 <Chrome className="size-5" />
                 Google
               </button>
-              <button className="flex items-center justify-center gap-3 py-3.5 border border-slate-200 rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all font-bold text-slate-600 text-sm active:scale-95">
+              <button type="button" className="flex items-center justify-center gap-3 py-3.5 border border-slate-200 rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all font-bold text-slate-600 text-sm active:scale-95">
                 <Github className="size-5" />
                 GitHub
               </button>
@@ -185,7 +271,7 @@ export default function Login() {
 
           <p className="mt-10 text-center text-sm text-slate-400 font-medium">
             {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button 
+            <button
               onClick={() => setMode(mode === "login" ? "register" : "login")}
               className="font-black text-emerald-600 hover:text-emerald-700 transition-colors"
             >
